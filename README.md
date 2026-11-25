@@ -177,7 +177,8 @@ go run ./cmd/iadu-sim --selftest
 - 单元：CRC、帧长/重同步、寄存器、位打包、温湿度量化、配置、state、applog、API。
 - Golden：16 条真机/参考实现帧逐字节比对（含广播发现、ESN、三段标签、温湿度、总线、信息、异常）。
 - 集成：RTU 字节流、MBAP 多客户端、HTTP CRUD/鉴权/SSE。
-- Linux CI 会运行 pty 与 pty 回环测试。
+- Linux CI 会运行 pty 回环、RTU pty 双端口共享设备端到端、`--selftest` 全链路。
+- 核心包测试覆盖率 ≥80%（`go test -cover ./...`）。
 
 ## 限制与安全
 
