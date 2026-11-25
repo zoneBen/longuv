@@ -89,7 +89,19 @@ func Run(ctx context.Context, opts Options) error {
 		startedPorts++
 	}
 	if startedPorts == 0 {
-		logger.Warn("没有可用的 RTU 端口；仅运行管理接口（后续里程碑补全 Modbus TCP/Web）")
+		logger.Warn("没有可用的 RTU 端口；Modbus TCP 调整服务仍可独立运行")
+	}
+
+	if cfg.Server.ModbusTCP.IsEnabled() {
+		tcpServer := transport.NewMBAPServer(cfg.Server.ModbusTCP, h, ring, logger)
+		if err := tcpServer.Start(); err != nil {
+			for _, started := range runners {
+				started.Stop()
+			}
+			return err
+		}
+		runners = append(runners, tcpServer)
+		logger.Info("Modbus TCP 调整服务监听中", "listen", tcpServer.Addr())
 	}
 
 	<-ctx.Done()

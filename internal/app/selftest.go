@@ -103,6 +103,12 @@ func RunSelftest() error {
 	}
 	fmt.Println("PASS LED 写入/回读 (0x0010)")
 
+	shadow, code := dev.ReadShadowHolding(0x8000, 6)
+	if code != 0 || len(shadow) != 6 || shadow[0] != 0x8020 || shadow[1] != 1 || shadow[3] != 42 {
+		return selftestFail("Modbus TCP 影子区", fmt.Errorf("信息=%X code=%d", shadow, code))
+	}
+	fmt.Println("PASS Modbus TCP 影子区 0x8000 设备信息")
+
 	if err := testPTY(); err != nil {
 		return selftestFail("pty 回环", err)
 	}

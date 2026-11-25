@@ -21,7 +21,7 @@ server:
   web:
     listen: 127.0.0.1:18090
   modbus_tcp:
-    enabled: true
+    enabled: false
     listen: 127.0.0.1:15020
 ports: []
 devices: []
