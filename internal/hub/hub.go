@@ -13,6 +13,7 @@ import (
 	"github.com/zoneBen/longuv/internal/config"
 	"github.com/zoneBen/longuv/internal/framelog"
 	"github.com/zoneBen/longuv/internal/model"
+	"github.com/zoneBen/longuv/internal/state"
 )
 
 // PortRuntime holds the mutable statistics of one configured port.
@@ -78,8 +79,39 @@ type Hub struct {
 	started     time.Time
 }
 
-// New builds a hub from the validated configuration.
+// New builds a hub from the validated configuration (first-run seed).
 func New(cfg *config.Config, ring *framelog.Ring, log *slog.Logger, onChange func()) (*Hub, error) {
+	if cfg == nil {
+		return nil, fmt.Errorf("配置为空")
+	}
+	snaps := make([]model.Snapshot, 0, len(cfg.Devices))
+	for _, seed := range cfg.Devices {
+		snap, err := SnapshotFromConfig(seed)
+		if err != nil {
+			return nil, err
+		}
+		snaps = append(snaps, snap)
+	}
+	binds := make([]model.Binding, 0, len(cfg.Bindings))
+	for _, b := range cfg.Bindings {
+		binds = append(binds, model.Binding{
+			DeviceID: b.Device,
+			Port:     b.Port,
+			UnitID:   b.UnitID,
+		})
+	}
+	return newHub(cfg, snaps, binds, ring, log, onChange)
+}
+
+// NewFromState builds a hub from a persisted state file.
+func NewFromState(cfg *config.Config, st state.File, ring *framelog.Ring, log *slog.Logger, onChange func()) (*Hub, error) {
+	if st.Version != state.CurrentVersion {
+		return nil, fmt.Errorf("状态版本 %d 不受支持", st.Version)
+	}
+	return newHub(cfg, st.Devices, st.Bindings, ring, log, onChange)
+}
+
+func newHub(cfg *config.Config, snaps []model.Snapshot, binds []model.Binding, ring *framelog.Ring, log *slog.Logger, onChange func()) (*Hub, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("配置为空")
 	}
@@ -90,7 +122,7 @@ func New(cfg *config.Config, ring *framelog.Ring, log *slog.Logger, onChange fun
 		ring = framelog.New(2048)
 	}
 	h := &Hub{
-		devices:     make(map[string]*model.Device, len(cfg.Devices)),
+		devices:     make(map[string]*model.Device, len(snaps)),
 		ports:       make(map[string]*PortRuntime, len(cfg.Ports)),
 		ring:        ring,
 		log:         log,
@@ -106,11 +138,7 @@ func New(cfg *config.Config, ring *framelog.Ring, log *slog.Logger, onChange fun
 		h.portOrder = append(h.portOrder, p.Name)
 	}
 	now := time.Now()
-	for _, seed := range cfg.Devices {
-		snap, err := SnapshotFromConfig(seed)
-		if err != nil {
-			return nil, err
-		}
+	for _, snap := range snaps {
 		dev, err := model.New(snap, now, h.markDirty)
 		if err != nil {
 			return nil, err
@@ -118,18 +146,56 @@ func New(cfg *config.Config, ring *framelog.Ring, log *slog.Logger, onChange fun
 		if _, dup := h.devices[dev.ID()]; dup {
 			return nil, fmt.Errorf("设备 id %q 重复", dev.ID())
 		}
+		if dev.TCPUnitID() < 1 || dev.TCPUnitID() > 247 {
+			return nil, fmt.Errorf("设备 %s 的 tcp_unit_id %d 非法", dev.ID(), dev.TCPUnitID())
+		}
+		for _, other := range h.devices {
+			if other.TCPUnitID() == dev.TCPUnitID() {
+				return nil, fmt.Errorf("设备 %s 与 %s 的 tcp_unit_id 都是 %d",
+					dev.ID(), other.ID(), dev.TCPUnitID())
+			}
+		}
 		h.devices[dev.ID()] = dev
 		h.deviceOrder = append(h.deviceOrder, dev.ID())
 	}
-	for _, b := range cfg.Bindings {
-		h.bindings = append(h.bindings, model.Binding{
-			DeviceID: b.Device,
-			Port:     b.Port,
-			UnitID:   b.UnitID,
-		})
+	for _, b := range binds {
+		if _, ok := h.devices[b.DeviceID]; !ok {
+			return nil, fmt.Errorf("绑定引用了不存在的设备 %q", b.DeviceID)
+		}
+		if _, ok := h.ports[b.Port]; !ok {
+			return nil, fmt.Errorf("绑定引用了不存在的端口 %q", b.Port)
+		}
+		if b.UnitID < 1 || b.UnitID > 247 {
+			return nil, fmt.Errorf("端口 %s 的绑定地址 %d 非法", b.Port, b.UnitID)
+		}
+		for _, existing := range h.bindings {
+			if existing.Port == b.Port && existing.UnitID == b.UnitID {
+				return nil, fmt.Errorf("端口 %s 的地址 %d 被重复绑定", b.Port, b.UnitID)
+			}
+		}
+		h.bindings = append(h.bindings, b)
 	}
 	h.updatePrimaryAddressesLocked()
 	return h, nil
+}
+
+// SnapshotFile captures the runtime state for persistence.
+func (h *Hub) SnapshotFile() state.File {
+	h.mu.RLock()
+	devices := make([]model.Snapshot, 0, len(h.deviceOrder))
+	for _, id := range h.deviceOrder {
+		if d := h.devices[id]; d != nil {
+			devices = append(devices, d.Snapshot())
+		}
+	}
+	bindings := append([]model.Binding(nil), h.bindings...)
+	h.mu.RUnlock()
+	return state.File{
+		Version:  state.CurrentVersion,
+		SavedAt:  time.Now(),
+		Devices:  devices,
+		Bindings: bindings,
+	}
 }
 
 // Ring returns the frame log ring.
@@ -383,6 +449,28 @@ func (h *Hub) RemoveBinding(deviceID, port string, unit uint8) error {
 		}
 	}
 	return fmt.Errorf("绑定 %s/%s/%d 不存在", deviceID, port, unit)
+}
+
+// SetTCPUnit changes a device's adjustment-server unit id after checking that
+// the new unit is not already in use.
+func (h *Hub) SetTCPUnit(deviceID string, unit uint8) error {
+	if unit < 1 || unit > 247 {
+		return fmt.Errorf("tcp_unit_id 必须在 1..247")
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	dev, ok := h.devices[deviceID]
+	if !ok {
+		return fmt.Errorf("设备 %q 不存在", deviceID)
+	}
+	for id, other := range h.devices {
+		if id != deviceID && other.TCPUnitID() == unit {
+			return fmt.Errorf("tcp_unit_id %d 已被设备 %s 使用", unit, id)
+		}
+	}
+	dev.SetTCPUnit(unit)
+	h.markDirtyLocked()
+	return nil
 }
 
 // Rebind moves the binding on port from oldUnit to newUnit (address

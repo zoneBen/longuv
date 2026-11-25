@@ -19,6 +19,7 @@ version: 1
 server:
   timezone: UTC
   web:
+    enabled: false
     listen: 127.0.0.1:18090
   modbus_tcp:
     enabled: false

@@ -4,7 +4,9 @@ import (
 	"io"
 	"log/slog"
 	"testing"
+	"time"
 
+	"github.com/zoneBen/longuv/internal/climate"
 	"github.com/zoneBen/longuv/internal/config"
 	"github.com/zoneBen/longuv/internal/framelog"
 	"github.com/zoneBen/longuv/internal/hub"
@@ -179,4 +181,53 @@ func TestDeviceAndBindingLifecycle(t *testing.T) {
 
 func binding(deviceID, port string, unit uint8) model.Binding {
 	return model.Binding{DeviceID: deviceID, Port: port, UnitID: unit}
+}
+
+func TestSnapshotFileRoundTrip(t *testing.T) {
+	h, cfg := newTestHub(t)
+	dev, _ := h.Device("iadu-1")
+	dev.SetName("changed")
+	if err := dev.SetLED(1, 0x00A0); err != nil {
+		t.Fatal(err)
+	}
+	if err := dev.SetPresent(42, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := dev.SetTag(2, [8]byte{1, 2, 3, 4, 5, 6, 7, 8}); err != nil {
+		t.Fatal(err)
+	}
+	dev.SetManual(climate.Top, 140, 120, time.Time{})
+
+	file := h.SnapshotFile()
+	if file.Version != 1 || len(file.Devices) != 1 || len(file.Bindings) != 2 {
+		t.Fatalf("snapshot file = %+v", file)
+	}
+	h2, err := hub.NewFromState(cfg, file, framelog.New(16),
+		slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
+	if err != nil {
+		t.Fatalf("NewFromState: %v", err)
+	}
+	dev2, ok := h2.Device("iadu-1")
+	if !ok {
+		t.Fatal("device missing after state restore")
+	}
+	got := dev2.Snapshot()
+	if got.Name != "changed" {
+		t.Fatalf("name = %q", got.Name)
+	}
+	if got.LED[0] != 0x00A0 {
+		t.Fatalf("LED = %#x", got.LED[0])
+	}
+	if got.Present&(1<<41) == 0 {
+		t.Fatal("U42 presence lost")
+	}
+	if got.Tags[1] != "0102030405060708" {
+		t.Fatalf("tag = %s", got.Tags[1])
+	}
+	if dev2.ManualMask()&1 == 0 {
+		t.Fatal("manual override lost")
+	}
+	if len(h2.Bindings()) != 2 {
+		t.Fatalf("bindings = %d", len(h2.Bindings()))
+	}
 }

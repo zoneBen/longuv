@@ -108,7 +108,6 @@ func New(snap Snapshot, now time.Time, onChange func()) (*Device, error) {
 	d.engine.ExpireManual(now)
 	d.engine.Refresh(now)
 	d.refreshTHNoLock()
-	d.lastSeen.Store(now.UnixNano())
 	return d, nil
 }
 
@@ -178,6 +177,44 @@ type Stats struct {
 	LastSeen time.Time
 	Reads    uint64
 	Writes   uint64
+}
+
+// StatusView is an immutable snapshot used by the web console.
+type StatusView struct {
+	THRaw      [climate.Zones]uint16 `json:"th_raw"`
+	Present    uint64                `json:"present"`
+	Changed    uint64                `json:"changed"`
+	ManualMask uint8                 `json:"manual_mask"`
+	LastSeen   time.Time             `json:"last_seen"`
+	Reads      uint64                `json:"reads"`
+	Writes     uint64                `json:"writes"`
+}
+
+// Status returns a point-in-time status snapshot.
+func (d *Device) Status() StatusView {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	now := time.Now()
+	var seen time.Time
+	if ns := d.lastSeen.Load(); ns != 0 {
+		seen = time.Unix(0, ns)
+	}
+	return StatusView{
+		THRaw:      d.th,
+		Present:    d.present & MaskBits(d.uCount),
+		Changed:    d.activeChangedLocked(now),
+		ManualMask: d.engine.ManualMask(),
+		LastSeen:   seen,
+		Reads:      d.reads.Load(),
+		Writes:     d.writes.Load(),
+	}
+}
+
+// ClimateEnabled reports whether dynamic climate simulation is active.
+func (d *Device) ClimateEnabled() bool {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	return d.climateEnabled
 }
 
 // Stats returns device activity counters.
@@ -417,6 +454,20 @@ func (d *Device) SetClimateParams(p climate.Params) {
 	d.engine.Refresh(time.Now())
 	d.refreshTHNoLock()
 	d.dirtyLocked()
+}
+
+// SetFixedTH replaces the static temperature/humidity used when dynamic
+// climate simulation is disabled.
+func (d *Device) SetFixedTH(temp, humi float64) error {
+	if temp < -40 || temp > 87.5 || humi < 0 || humi > 100 {
+		return fmt.Errorf("固定温湿度超出范围")
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.fixed = [2]float64{temp, humi}
+	d.refreshTHNoLock()
+	d.dirtyLocked()
+	return nil
 }
 
 // RefreshClimate recomputes the climate immediately without persisting.

@@ -40,11 +40,15 @@ type Server struct {
 
 // Web configures the embedded management console and REST API.
 type Web struct {
+	Enabled       *bool  `yaml:"enabled"`
 	Listen        string `yaml:"listen"`
 	Token         string `yaml:"token"`
 	SSEMaxClients int    `yaml:"sse_max_clients"`
 	FrameBuffer   int    `yaml:"frame_buffer"`
 }
+
+// IsEnabled reports whether the web console should start.
+func (w Web) IsEnabled() bool { return w.Enabled == nil || *w.Enabled }
 
 // ModbusTCP configures the register-adjustment server (MBAP).
 type ModbusTCP struct {
@@ -254,6 +258,14 @@ func Load(path, baseDir string) (*Config, error) {
 	return &c, nil
 }
 
+// DefaultDeviceSeed returns a fully populated device seed usable by the web
+// API when creating a device at runtime.
+func DefaultDeviceSeed(index int, timezone string) Device {
+	d := defaultDevice(index, timezone)
+	d.applyDefaults(index, timezone)
+	return d
+}
+
 // Default returns a fully populated default configuration for baseDir.
 func Default(baseDir string) *Config {
 	if baseDir == "" {
@@ -354,6 +366,9 @@ func (c *Config) applyDefaults(baseDir string) {
 	}
 
 	// Server defaults.
+	if c.Server.Web.Enabled == nil {
+		c.Server.Web.Enabled = boolPtr(true)
+	}
 	if c.Server.Web.Listen == "" {
 		c.Server.Web.Listen = "127.0.0.1:18090"
 	}
@@ -562,6 +577,7 @@ func (c *Config) assignTCPUnits() {
 func defaultServer(baseDir string) Server {
 	return Server{
 		Web: Web{
+			Enabled:       boolPtr(true),
 			Listen:        "127.0.0.1:18090",
 			Token:         "",
 			SSEMaxClients: 64,

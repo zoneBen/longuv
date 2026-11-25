@@ -4,6 +4,7 @@
 package climate
 
 import (
+	"fmt"
 	"math"
 	"math/rand"
 	"time"
@@ -200,6 +201,59 @@ func (e *Engine) ExpireManual(now time.Time) bool {
 		}
 	}
 	return changed
+}
+
+// ValidateParams checks the persisted climate configuration.
+func ValidateParams(p Params) error {
+	if p.UpdateMS < 100 {
+		return fmt.Errorf("update_ms 不能小于 100")
+	}
+	if p.TimeScale <= 0 || p.TimeScale > 100000 {
+		return fmt.Errorf("time_scale 必须在 (0,100000]")
+	}
+	if _, err := time.LoadLocation(p.Timezone); err != nil {
+		return fmt.Errorf("timezone %q 无法解析: %w", p.Timezone, err)
+	}
+	t := p.Temperature
+	if !finite(t.Mean) || !finite(t.Amplitude) || !finite(t.PeakHour) ||
+		!finite(t.Harmonic2Amplitude) || !finite(t.Min) || !finite(t.Max) {
+		return fmt.Errorf("temperature 含有非有限数值")
+	}
+	if t.Min >= t.Max || t.Min < -40 || t.Max > 87.5 {
+		return fmt.Errorf("temperature 范围非法")
+	}
+	if t.Amplitude < 0 || t.Harmonic2Amplitude < 0 {
+		return fmt.Errorf("temperature 振幅不能为负")
+	}
+	h := p.Humidity
+	if !finite(h.Mean) || !finite(h.TempCoupling) || !finite(h.Amplitude) || !finite(h.Min) || !finite(h.Max) {
+		return fmt.Errorf("humidity 含有非有限数值")
+	}
+	if h.Min >= h.Max || h.Min < 0 || h.Max > 100 {
+		return fmt.Errorf("humidity 范围非法")
+	}
+	if h.Amplitude < 0 {
+		return fmt.Errorf("humidity 振幅不能为负")
+	}
+	for name, off := range map[string]ZoneOffset{
+		"top": p.ZoneOffsets.Top, "mid": p.ZoneOffsets.Mid, "bottom": p.ZoneOffsets.Bottom,
+	} {
+		if !finite(off.Temp) || !finite(off.Humi) || !finite(off.LagH) {
+			return fmt.Errorf("zone_offsets.%s 含有非有限数值", name)
+		}
+	}
+	if p.Noise.TempTauMS <= 0 || p.Noise.HumiTauMS <= 0 {
+		return fmt.Errorf("noise tau 必须为正数")
+	}
+	if !finite(p.Noise.TempSigma) || !finite(p.Noise.HumiSigma) ||
+		p.Noise.TempSigma < 0 || p.Noise.HumiSigma < 0 {
+		return fmt.Errorf("noise sigma 必须是非负有限数")
+	}
+	return nil
+}
+
+func finite(v float64) bool {
+	return !math.IsNaN(v) && !math.IsInf(v, 0)
 }
 
 // Current returns the last computed raw register words.

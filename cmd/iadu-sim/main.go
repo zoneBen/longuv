@@ -19,6 +19,8 @@ func main() {
 		checkOnly   = flag.Bool("check-config", false, "校验配置后退出")
 		dumpConfig  = flag.Bool("dump-config", false, "输出默认配置 YAML 后退出")
 		runSelftest = flag.Bool("selftest", false, "执行离线协议与 pty 自检后退出")
+		importCfg   = flag.Bool("import-config", false, "忽略 state.json，按配置文件重新播种设备状态")
+		allowBroken = flag.Bool("allow-corrupt-state", false, "状态文件损坏时按配置重新播种")
 	)
 	flag.Parse()
 
@@ -67,8 +69,10 @@ func main() {
 	}
 
 	if err := app.Run(context.Background(), app.Options{
-		ConfigPath: *configPath,
-		BaseDir:    *baseDir,
+		ConfigPath:        *configPath,
+		BaseDir:           *baseDir,
+		ImportConfig:      *importCfg,
+		AllowCorruptState: *allowBroken,
 	}); err != nil {
 		fatal(err)
 	}
