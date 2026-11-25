@@ -1,0 +1,18 @@
+# Reference material (not part of the application)
+data/
+
+# Build outputs
+/dist/
+/bin/
+*.exe
+*.test
+*.out
+
+# Local runtime for development
+/.iadu-sim/
+*.log
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store
