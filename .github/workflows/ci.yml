@@ -53,10 +53,23 @@ jobs:
       - name: check deb packages
         run: |
           set -euo pipefail
+          if [ ! -d dist ]; then
+            echo "::error::dist directory is missing (cwd $(pwd))"
+            exit 1
+          fi
           ls -lh dist
+          shopt -s nullglob
+          debs=(dist/*.deb)
+          if [ ${#debs[@]} -eq 0 ]; then
+            echo "::error::no .deb files in dist: $(ls dist | tr '\n' ' ')"
+            exit 1
+          fi
           arches=""
-          for f in dist/*.deb; do
-            a=$(dpkg-deb -f "$f" Architecture)
+          for f in "${debs[@]}"; do
+            if ! a=$(dpkg-deb -f "$f" Architecture 2>&1); then
+              echo "::error file=$f::dpkg-deb -f Architecture failed: $a"
+              exit 1
+            fi
             echo "$f -> $a"
             arches="$arches $a"
             if ! dpkg-deb -c "$f" | grep -q './usr/bin/iadu-sim'; then
@@ -73,9 +86,15 @@ jobs:
       - name: check rpm packages
         run: |
           set -euo pipefail
+          shopt -s nullglob
+          rpms=(dist/*.rpm)
+          if [ ${#rpms[@]} -eq 0 ]; then
+            echo "::error::no .rpm files in dist: $(ls dist 2>&1 | tr '\n' ' ')"
+            exit 1
+          fi
           sudo apt-get update -qq
           sudo apt-get install -y -qq rpm >/dev/null
-          for f in dist/*.rpm; do
+          for f in "${rpms[@]}"; do
             echo "== $f"
             if ! rpm -qpi "$f" | grep -E '^(Name|Version|Architecture)'; then
               echo "::error file=$f::rpm metadata unreadable"
