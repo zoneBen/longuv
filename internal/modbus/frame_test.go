@@ -18,6 +18,11 @@ func TestFrameLength(t *testing.T) {
 		{[]byte{0x01, 0x0F, 0, 0, 0, 3, 1, 0x07}, 10, false},
 		{[]byte{0x01, 0x0F, 0, 0, 0, 3, 1, 0x07, 0xAA, 0xBB}, 10, true},
 		{[]byte{0x01, 0x07, 0, 0, 0, 1, 0, 0}, 8, true},
+		// Malformed count/byte-count pairs must not wait for a long frame.
+		{[]byte{0x01, 0x10, 0, 0, 0, 2, 3}, 8, false},
+		{[]byte{0x01, 0x10, 0, 0, 0, 2, 3, 0xAA, 0xBB}, 8, true},
+		{[]byte{0x01, 0x0F, 0, 0, 0, 8, 2}, 8, false},
+		{[]byte{0x01, 0x10, 0x00, 0x00, 0x00, 0x7C, 0xF8}, 8, false},
 	}
 	for i, tc := range cases {
 		need, ready := FrameLength(tc.buf)

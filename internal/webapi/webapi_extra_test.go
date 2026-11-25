@@ -299,3 +299,62 @@ func TestReadJSONStrictness(t *testing.T) {
 		t.Fatalf("oversized body = %d", status)
 	}
 }
+
+func TestCreateDeviceValidationBounds(t *testing.T) {
+	ts, _, _ := newTestAPI(t, "")
+	for _, tc := range []struct {
+		name string
+		body map[string]any
+	}{
+		{"tcp unit 255", map[string]any{"id": "x", "tcp_unit_id": 255}},
+		{"esn control char", map[string]any{"id": "x", "esn": "bad\n"}},
+		{"esn too long", map[string]any{"id": "x", "esn": strings.Repeat("x", 21)}},
+		{"u count too large", map[string]any{"id": "x", "u_count": 43}},
+	} {
+		if r := do(t, ts, "POST", "/api/devices", tc.body, ""); r.Status != http.StatusBadRequest {
+			t.Fatalf("%s = %d %+v", tc.name, r.Status, r.Error)
+		}
+	}
+}
+
+func TestPatchValidationIsAtomic(t *testing.T) {
+	ts, _, _ := newTestAPI(t, "")
+	r := do(t, ts, "PATCH", "/api/devices/iadu-1", map[string]any{
+		"name": "should-not-stick", "changed_hold_ms": 0,
+	}, "")
+	if r.Status != http.StatusBadRequest {
+		t.Fatalf("invalid patch = %d", r.Status)
+	}
+	detail := asMap(t, decode(t, do(t, ts, "GET", "/api/devices/iadu-1", nil, "").Data))
+	if name := asString(t, asMap(t, detail["snapshot"])["name"]); name == "should-not-stick" {
+		t.Fatal("name was applied even though the patch failed")
+	}
+	r = do(t, ts, "PATCH", "/api/devices/iadu-1", map[string]any{
+		"name": "should-not-stick", "esn": "bad\n",
+	}, "")
+	if r.Status != http.StatusBadRequest {
+		t.Fatalf("invalid esn patch = %d", r.Status)
+	}
+	detail = asMap(t, decode(t, do(t, ts, "GET", "/api/devices/iadu-1", nil, "").Data))
+	if name := asString(t, asMap(t, detail["snapshot"])["name"]); name == "should-not-stick" {
+		t.Fatal("name was applied before a later invalid field")
+	}
+}
+
+func TestTagClearWhilePresent(t *testing.T) {
+	ts, _, _ := newTestAPI(t, "")
+	r := do(t, ts, "PUT", "/api/devices/iadu-1/tags/1", map[string]any{
+		"tag": "0000000000000000", "present": true,
+	}, "")
+	if r.Status != http.StatusOK {
+		t.Fatalf("clear tag = %d %+v", r.Status, r.Error)
+	}
+	detail := asMap(t, decode(t, r.Data))
+	snap := asMap(t, detail["snapshot"])
+	if tag := asString(t, asSlice(t, snap["tags"])[0]); tag != "0000000000000000" {
+		t.Fatalf("cleared tag = %s", tag)
+	}
+	if uint64(asFloat(t, snap["present"]))&1 == 0 {
+		t.Fatal("U1 should remain present")
+	}
+}

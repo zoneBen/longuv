@@ -2,6 +2,7 @@ package modbus_test
 
 import (
 	"bytes"
+	"errors"
 	"testing"
 
 	"github.com/zoneBen/longuv/internal/modbus"
@@ -408,5 +409,55 @@ func TestSlaveAddressFilter(t *testing.T) {
 	}
 	if bank.wroteHolding[0x10] != 7 {
 		t.Fatal("standard broadcast write not applied")
+	}
+}
+
+func TestAdoptFailureIsReported(t *testing.T) {
+	bank := &fakeBank{}
+	s := &modbus.Slave{
+		Addr: 1, Bank: bank, AllowAdopt: true,
+		OnAdopt: func(uint8) error { return errors.New("address in use") },
+	}
+	got := s.Handle(frame(1, 0x06, 0x00, 0x01, 0x00, 0x02))
+	if !bytes.Equal(got, exception(1, 0x06, modbus.ExcIllegalAddress)) {
+		t.Fatalf("failed adopt response = %s", modbus.Hex(got))
+	}
+	if len(bank.wroteHolding) != 0 {
+		t.Fatalf("failed adopt must not write 0x0001: %#v", bank.wroteHolding)
+	}
+}
+
+func TestBroadcastAdoptIsIgnored(t *testing.T) {
+	for _, addr := range []byte{0xFF, 0x00} {
+		bank := &fakeBank{}
+		called := false
+		s := &modbus.Slave{
+			Addr: 1, Bank: bank, AllowAdopt: true,
+			OnAdopt: func(uint8) error { called = true; return nil },
+		}
+		if got := s.Handle(frame(addr, 0x06, 0x00, 0x01, 0x00, 0x02)); got != nil {
+			t.Fatalf("broadcast adopt reply = %s", modbus.Hex(got))
+		}
+		if called {
+			t.Fatalf("broadcast address %#x triggered adoption", addr)
+		}
+		if len(bank.wroteHolding) != 0 {
+			t.Fatalf("broadcast address %#x wrote 0x0001", addr)
+		}
+	}
+}
+
+func TestFC05RejectsInvalidValue(t *testing.T) {
+	bank := &fakeBank{}
+	s := newSlave(bank)
+	got := s.Handle(frame(1, 0x05, 0x00, 0x10, 0x12, 0x34))
+	if !bytes.Equal(got, exception(1, 0x05, modbus.ExcIllegalValue)) {
+		t.Fatalf("invalid FC05 = %s", modbus.Hex(got))
+	}
+	if len(bank.wroteCoil) != 0 {
+		t.Fatal("invalid FC05 must not write a coil")
+	}
+	if got := s.Handle(frame(0xFF, 0x05, 0x00, 0x10, 0x12, 0x34)); got != nil {
+		t.Fatalf("broadcast invalid FC05 must be silent: %s", modbus.Hex(got))
 	}
 }

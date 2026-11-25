@@ -1,6 +1,7 @@
 package state
 
 import (
+	"errors"
 	"math"
 	"os"
 	"path/filepath"
@@ -122,5 +123,31 @@ func TestSaveDirectoryCreationError(t *testing.T) {
 	store := NewStore(filepath.Join(blocker, "state.json"))
 	if err := store.Save(File{Version: CurrentVersion}); err == nil {
 		t.Fatal("a file used as a directory should fail the save")
+	}
+}
+
+func TestLoadFallsBackWhenPrimaryMissing(t *testing.T) {
+	dir := t.TempDir()
+	store := NewStore(filepath.Join(dir, "state.json"))
+	first := File{Version: CurrentVersion, Devices: []model.Snapshot{{ID: "a", Name: "first", UCount: 1}}}
+	if err := store.Save(first); err != nil {
+		t.Fatal(err)
+	}
+	second := File{Version: CurrentVersion, Devices: []model.Snapshot{{ID: "a", Name: "second", UCount: 1}}}
+	if err := store.Save(second); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(store.Path()); err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.Load()
+	if err != nil || got.Devices[0].Name != "first" {
+		t.Fatalf("backup fallback = %+v, %v", got, err)
+	}
+	if err := os.Remove(store.Path() + ".bak"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Load(); !errors.Is(err, ErrNotExist) {
+		t.Fatalf("both missing should report ErrNotExist, got %v", err)
 	}
 }

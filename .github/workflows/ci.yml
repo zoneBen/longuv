@@ -79,7 +79,7 @@ jobs:
         run: |
           docker run --rm -v "$PWD/dist:/dist" centos:7 sh -c '
             set -e
-            rpm -Uvh /dist/*x86_64.rpm
+            rpm -Uvh /dist/*_linux_amd64.rpm
             /usr/bin/iadu-sim --version
             /usr/bin/iadu-sim --selftest
           '

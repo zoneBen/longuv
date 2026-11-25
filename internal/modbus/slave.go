@@ -106,16 +106,32 @@ func (s *Slave) Handle(frame []byte) (resp []byte) {
 		}
 		reg := binary.BigEndian.Uint16(pdu[0:2])
 		val := binary.BigEndian.Uint16(pdu[2:4])
+		bcast := bcastFF || stdBcast
 		var code uint8
 		if fc == 0x05 {
+			if val != 0x0000 && val != 0xFF00 {
+				if bcast {
+					return nil
+				}
+				return s.exception(s.Addr, fc, ExcIllegalValue)
+			}
 			code = s.Bank.WriteCoil(reg, val == 0xFF00)
 		} else {
-			code = s.Bank.WriteHolding(reg, val, s.Addr)
-			if reg == 0x0001 && s.AllowAdopt && val >= 1 && val <= 247 && s.OnAdopt != nil {
-				_ = s.OnAdopt(uint8(val))
+			if reg == 0x0001 && s.AllowAdopt {
+				if bcast {
+					// Address negotiation is only meaningful for a unicast
+					// master; never rebind every device on a broadcast.
+					return nil
+				}
+				if val >= 1 && val <= 247 && s.OnAdopt != nil {
+					if err := s.OnAdopt(uint8(val)); err != nil {
+						return s.exception(s.Addr, fc, ExcIllegalAddress)
+					}
+				}
 			}
+			code = s.Bank.WriteHolding(reg, val, s.Addr)
 		}
-		if bcastFF || stdBcast {
+		if bcast {
 			return nil
 		}
 		if code != 0 {

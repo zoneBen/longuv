@@ -12,6 +12,8 @@ WorkingDirectory=/opt/apps/iadu-sim
 ExecStart=/usr/bin/iadu-sim --config /opt/apps/iadu-sim/config/config.yaml
 Restart=always
 RestartSec=2
+# 端口应答延时/发送静默可配置到 60s；确保 SIGTERM 后能在 systemd 强杀前保存状态。
+TimeoutStopSec=30
 LimitNOFILE=4096
 NoNewPrivileges=true
 PrivateTmp=true

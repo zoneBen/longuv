@@ -1,6 +1,7 @@
 package modbus
 
 import (
+	"encoding/binary"
 	"encoding/hex"
 	"strings"
 )
@@ -35,7 +36,21 @@ func FrameLength(buf []byte) (need int, ready bool) {
 		if len(buf) < 7 {
 			return 7, false
 		}
-		n := 9 + int(buf[6])
+		count := int(binary.BigEndian.Uint16(buf[4:6]))
+		byteCount := int(buf[6])
+		valid := false
+		if buf[1] == 0x0F {
+			valid = count >= 1 && count <= 1968 && byteCount == (count+7)/8
+		} else {
+			valid = count >= 1 && count <= 123 && byteCount == count*2
+		}
+		if !valid {
+			// A malformed count/byte-count pair must not make the parser wait
+			// for up to 255 bytes. Treat it as one normal frame so the CRC
+			// check fails and the feeder resynchronises byte by byte.
+			return 8, len(buf) >= 8
+		}
+		n := 9 + byteCount
 		return n, len(buf) >= n
 	default:
 		return 8, len(buf) >= 8

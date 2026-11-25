@@ -46,6 +46,22 @@ func (s *Server) handleCreateDevice(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "conflict", "设备 id 已存在")
 		return
 	}
+	if req.UCount > 0 {
+		if err := model.ValidateUCount(req.UCount); err != nil {
+			writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+			return
+		}
+	}
+	if req.ESN != "" {
+		if err := model.ValidateESN(req.ESN); err != nil {
+			writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+			return
+		}
+	}
+	if req.TCPUnitID > 247 {
+		writeError(w, http.StatusBadRequest, "bad_request", "tcp_unit_id 必须在 1..247")
+		return
+	}
 	seed := config.DefaultDeviceSeed(len(s.deps.Hub.Devices())+1, s.deps.Config.Server.Timezone)
 	seed.ID = req.ID
 	if req.Name != "" {
@@ -109,12 +125,47 @@ func (s *Server) handlePatchDevice(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &req) {
 		return
 	}
-	if req.Name != nil {
-		if strings.TrimSpace(*req.Name) == "" {
-			writeError(w, http.StatusBadRequest, "bad_request", "设备名称不能为空")
+	// Validate every supplied field before applying any of them; otherwise a
+	// later invalid field would leave earlier edits applied and persisted.
+	if req.Name != nil && strings.TrimSpace(*req.Name) == "" {
+		writeError(w, http.StatusBadRequest, "bad_request", "设备名称不能为空")
+		return
+	}
+	if req.ESN != nil {
+		if err := model.ValidateESN(*req.ESN); err != nil {
+			writeError(w, http.StatusBadRequest, "bad_request", err.Error())
 			return
 		}
-		dev.SetName(*req.Name)
+	}
+	if req.UCount != nil {
+		if err := model.ValidateUCount(*req.UCount); err != nil {
+			writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+			return
+		}
+	}
+	if req.ChangedHoldMS != nil {
+		if err := model.ValidateChangedHoldMS(*req.ChangedHoldMS); err != nil {
+			writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+			return
+		}
+	}
+	if req.TCPUnitID != nil {
+		if *req.TCPUnitID < 1 || *req.TCPUnitID > 247 {
+			writeError(w, http.StatusBadRequest, "bad_request", "tcp_unit_id 必须在 1..247")
+			return
+		}
+		if err := s.deps.Hub.ValidateTCPUnit(dev.ID(), *req.TCPUnitID); err != nil {
+			writeError(w, http.StatusConflict, "conflict", err.Error())
+			return
+		}
+	}
+	// Apply the only field that can still fail (a concurrent claimant of the
+	// unit id) before the infallible edits.
+	if req.TCPUnitID != nil {
+		if err := s.deps.Hub.SetTCPUnit(dev.ID(), *req.TCPUnitID); err != nil {
+			writeError(w, http.StatusConflict, "conflict", err.Error())
+			return
+		}
 	}
 	if req.ESN != nil {
 		if err := dev.SetESN(*req.ESN); err != nil {
@@ -128,11 +179,8 @@ func (s *Server) handlePatchDevice(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if req.TCPUnitID != nil {
-		if err := s.deps.Hub.SetTCPUnit(dev.ID(), *req.TCPUnitID); err != nil {
-			writeError(w, http.StatusConflict, "conflict", err.Error())
-			return
-		}
+	if req.Name != nil {
+		dev.SetName(*req.Name)
 	}
 	if req.Model != nil || req.BaudCode != nil || req.SoftVersion != nil || req.HardVersion != nil {
 		snap := dev.Snapshot()
@@ -199,12 +247,16 @@ func (s *Server) handleTag(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
-	if err := dev.SetTag(u, tag); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", err.Error())
-		return
-	}
+	// Presence first: SetPresent(true) may install a default tag, and the
+	// explicit tag (including an all-zero clear) must win.
 	if req.Present != nil {
 		if err := dev.SetPresent(u, *req.Present); err != nil {
+			writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+			return
+		}
+	}
+	if req.Present == nil || *req.Present {
+		if err := dev.SetTag(u, tag); err != nil {
 			writeError(w, http.StatusBadRequest, "bad_request", err.Error())
 			return
 		}

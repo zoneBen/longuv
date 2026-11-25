@@ -112,14 +112,14 @@ func (p *RTUPort) loop() {
 			p.hub.SetConnected(p.cfg.Name, true)
 			pending = append(pending, buf[:n]...)
 			if out := feeder.Feed(&pending); len(out) > 0 {
-				if p.cfg.ResponseDelayMS > 0 {
-					time.Sleep(time.Duration(p.cfg.ResponseDelayMS) * time.Millisecond)
+				if !p.sleep(time.Duration(p.cfg.ResponseDelayMS) * time.Millisecond) {
+					return
 				}
 				if _, werr := p.pair.Master.Write(out); werr != nil {
 					p.log.Warn("RTU 写回应答失败", "port", p.cfg.Name, "err", werr)
 				}
-				if p.cfg.TxSilenceMS > 0 {
-					time.Sleep(time.Duration(p.cfg.TxSilenceMS) * time.Millisecond)
+				if !p.sleep(time.Duration(p.cfg.TxSilenceMS) * time.Millisecond) {
+					return
 				}
 			}
 		}
@@ -129,10 +129,9 @@ func (p *RTUPort) loop() {
 			}
 			if errors.Is(err, io.EOF) || errors.Is(err, syscall.EIO) {
 				p.hub.SetConnected(p.cfg.Name, false)
-				select {
-				case <-p.stop:
+				pending = pending[:0]
+				if !p.sleep(50 * time.Millisecond) {
 					return
-				case <-time.After(50 * time.Millisecond):
 				}
 				continue
 			}
@@ -155,6 +154,21 @@ func (p *RTUPort) stopped() bool {
 		return true
 	default:
 		return false
+	}
+}
+
+// sleep waits for d but returns false immediately when Stop is requested.
+func (p *RTUPort) sleep(d time.Duration) bool {
+	if d <= 0 {
+		return !p.stopped()
+	}
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-p.stop:
+		return false
+	case <-t.C:
+		return true
 	}
 }
 

@@ -237,9 +237,8 @@ func (d *Device) SetName(name string) {
 	d.dirtyLocked()
 }
 
-// SetESN replaces the 20-byte ESN. Values longer than 20 bytes or containing
-// non-printable ASCII are rejected.
-func (d *Device) SetESN(s string) error {
+// ValidateESN checks an ESN before it is stored.
+func ValidateESN(s string) error {
 	if len(s) > 20 {
 		return fmt.Errorf("ESN 最多 20 个 ASCII 字符")
 	}
@@ -247,6 +246,15 @@ func (d *Device) SetESN(s string) error {
 		if r < 32 || r > 126 {
 			return fmt.Errorf("ESN 只能包含可打印 ASCII 字符")
 		}
+	}
+	return nil
+}
+
+// SetESN replaces the 20-byte ESN. Values longer than 20 bytes or containing
+// non-printable ASCII are rejected.
+func (d *Device) SetESN(s string) error {
+	if err := ValidateESN(s); err != nil {
+		return err
 	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -273,10 +281,18 @@ func (d *Device) SetPrimaryAddress(addr uint8) {
 	d.info[1] = uint16(addr)
 }
 
-// SetUCount resizes the U-position arrays.
-func (d *Device) SetUCount(n int) error {
+// ValidateUCount checks a U-position count.
+func ValidateUCount(n int) error {
 	if n < 1 || n > MaxUCount {
 		return fmt.Errorf("U 位长度必须在 1..%d", MaxUCount)
+	}
+	return nil
+}
+
+// SetUCount resizes the U-position arrays.
+func (d *Device) SetUCount(n int) error {
+	if err := ValidateUCount(n); err != nil {
+		return err
 	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -318,10 +334,18 @@ func (d *Device) SetStrict(v bool) {
 	d.dirtyLocked()
 }
 
-// SetChangedHoldMS changes how long changed bits stay asserted.
-func (d *Device) SetChangedHoldMS(ms int) error {
+// ValidateChangedHoldMS checks the changed-bit hold duration.
+func ValidateChangedHoldMS(ms int) error {
 	if ms <= 0 || ms > 3600000 {
 		return fmt.Errorf("changed_hold_ms 必须在 1..3600000")
+	}
+	return nil
+}
+
+// SetChangedHoldMS changes how long changed bits stay asserted.
+func (d *Device) SetChangedHoldMS(ms int) error {
+	if err := ValidateChangedHoldMS(ms); err != nil {
+		return err
 	}
 	d.mu.Lock()
 	defer d.mu.Unlock()

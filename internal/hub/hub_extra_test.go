@@ -238,3 +238,45 @@ func TestSnapshotFileIsACopy(t *testing.T) {
 		t.Fatal("SnapshotFile exposed the live binding slice")
 	}
 }
+
+func TestAddDeviceRejectsInvalidUnitAndESN(t *testing.T) {
+	h, cfg := newTestHub(t)
+	seed := cfg.Devices[0]
+	seed.ID = "bad-unit"
+	seed.TCPUnitID = 248
+	snap, err := hub.SnapshotFromConfig(seed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.AddDevice(snap); err == nil {
+		t.Fatal("tcp_unit_id 248 should be rejected")
+	}
+	seed.TCPUnitID = 2
+	seed.ESN = "bad\n"
+	snap, err = hub.SnapshotFromConfig(seed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.AddDevice(snap); err == nil {
+		t.Fatal("non-printable ESN should be rejected")
+	}
+}
+
+func TestValidateTCPUnit(t *testing.T) {
+	h, _ := newTestHub(t)
+	if err := h.ValidateTCPUnit("iadu-1", 5); err != nil {
+		t.Fatalf("valid unit rejected: %v", err)
+	}
+	if err := h.ValidateTCPUnit("iadu-1", 0); err == nil {
+		t.Fatal("unit 0 should be rejected")
+	}
+	if err := h.ValidateTCPUnit("iadu-1", 248); err == nil {
+		t.Fatal("unit 248 should be rejected")
+	}
+	if err := h.ValidateTCPUnit("missing", 5); err == nil {
+		t.Fatal("missing device should be rejected")
+	}
+	if err := h.SetTCPUnit("iadu-1", 5); err != nil {
+		t.Fatalf("SetTCPUnit after validation: %v", err)
+	}
+}

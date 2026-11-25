@@ -367,6 +367,12 @@ func (h *Hub) RecordCRCError(port string) {
 
 // AddDevice inserts a device at runtime.
 func (h *Hub) AddDevice(snap model.Snapshot) error {
+	if err := model.ValidateESN(snap.ESN); err != nil {
+		return fmt.Errorf("设备 %s 的 esn: %w", snap.ID, err)
+	}
+	if snap.TCPUnitID < 1 || snap.TCPUnitID > 247 {
+		return fmt.Errorf("tcp_unit_id 必须在 1..247")
+	}
 	dev, err := model.New(snap, time.Now(), h.markDirty)
 	if err != nil {
 		return err
@@ -451,16 +457,19 @@ func (h *Hub) RemoveBinding(deviceID, port string, unit uint8) error {
 	return fmt.Errorf("绑定 %s/%s/%d 不存在", deviceID, port, unit)
 }
 
-// SetTCPUnit changes a device's adjustment-server unit id after checking that
-// the new unit is not already in use.
-func (h *Hub) SetTCPUnit(deviceID string, unit uint8) error {
+// ValidateTCPUnit checks that unit can be assigned to deviceID without
+// changing anything.
+func (h *Hub) ValidateTCPUnit(deviceID string, unit uint8) error {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.validateTCPUnitLocked(deviceID, unit)
+}
+
+func (h *Hub) validateTCPUnitLocked(deviceID string, unit uint8) error {
 	if unit < 1 || unit > 247 {
 		return fmt.Errorf("tcp_unit_id 必须在 1..247")
 	}
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	dev, ok := h.devices[deviceID]
-	if !ok {
+	if _, ok := h.devices[deviceID]; !ok {
 		return fmt.Errorf("设备 %q 不存在", deviceID)
 	}
 	for id, other := range h.devices {
@@ -468,7 +477,18 @@ func (h *Hub) SetTCPUnit(deviceID string, unit uint8) error {
 			return fmt.Errorf("tcp_unit_id %d 已被设备 %s 使用", unit, id)
 		}
 	}
-	dev.SetTCPUnit(unit)
+	return nil
+}
+
+// SetTCPUnit changes a device's adjustment-server unit id after checking that
+// the new unit is not already in use.
+func (h *Hub) SetTCPUnit(deviceID string, unit uint8) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if err := h.validateTCPUnitLocked(deviceID, unit); err != nil {
+		return err
+	}
+	h.devices[deviceID].SetTCPUnit(unit)
 	h.markDirtyLocked()
 	return nil
 }

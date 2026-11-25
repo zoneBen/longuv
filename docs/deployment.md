@@ -42,9 +42,11 @@ systemctl status iadu-sim
 ### rpm（CentOS 7+）
 
 ```bash
-sudo rpm -Uvh iadu-sim-<version>-1.x86_64.rpm
+sudo rpm -Uvh iadu-sim_<version>_linux_amd64.rpm
+# arm64：
+sudo rpm -Uvh iadu-sim_<version>_linux_arm64.rpm
 # 或
-sudo yum localinstall -y iadu-sim-<version>-1.x86_64.rpm
+sudo yum localinstall -y iadu-sim_<version>_linux_amd64.rpm
 systemctl status iadu-sim
 ```
 
@@ -78,7 +80,9 @@ tail -f /opt/apps/iadu-sim/logs/iadu-sim.log
 
 - pty slave 默认 `0666`，同机任意用户可打开；如要收紧：
   - 配置 `ports[].mode: "0660"`、`ports[].group: "dialout"`；
-  - 把采集程序用户加入 `dialout`。
+  - 把**服务用户 `iadu-sim`** 和采集程序用户都加入 `dialout`：
+    `sudo usermod -aG dialout iadu-sim && sudo systemctl restart iadu-sim`。
+    只有服务用户属于该组，运行中的进程才能把 pty 改到该组；否则端口启动会失败。
 - 如果 `link` 路径已存在一个**普通文件/设备节点**，默认拒绝覆盖（防止误删 `/dev/ttyWCHx`）；
   将 `ports[].replace_existing` 设为 `true` 时会先重命名为 `.bak.<时间戳>` 再创建软链。
 - 采集程序打开稳定路径：`/opt/apps/iadu-sim/run/com1`（或配置里 `link` 的值）。
@@ -126,7 +130,8 @@ systemctl restart iadu-sim
 - `state.json`：第一次启动从 config 播种后即成为设备/绑定的**运行时权威**。
   - 页面上的改值、增删设备/绑定会原子写入 state.json；
   - RTU/TCP 写入的值也会防抖保存（自动温湿度计算值、变化位不保存）；
-  - 保留 `state.json.bak`；主文件损坏时自动回退。
+  - 宽松模式下未定义的保持寄存器（HRX）和线圈不持久化，重启后清零；
+  - 保留 `state.json.bak`；主文件损坏或缺失时自动回退到备份。
 - 修改 config 的 `devices`/`bindings` 后需要重新播种：
 
 ```bash
@@ -140,6 +145,9 @@ iadu-sim --allow-corrupt-state --config /opt/apps/iadu-sim/config/config.yaml
 > 通过 systemd 管理时，建议先停服务再手动执行上述命令，随后 start，避免两个进程同时写状态。
 
 - 修改端口集合/listen 地址/令牌后需要重启服务。
+- **从 config 删除端口前**，先用页面或 `POST /api/bindings` 删除该端口上的绑定；
+  否则 state.json 中的旧绑定会在启动时校验失败。也可用 `--import-config` 重新播种
+  （会丢弃运行时的设备/绑定改动）。
 - 日志路径、状态路径可在 config 中改；目录必须对 `iadu-sim` 用户可写。
 
 ## 8. 温湿度行为

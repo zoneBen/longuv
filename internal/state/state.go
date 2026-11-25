@@ -46,10 +46,18 @@ func (s *Store) Load() (File, error) {
 	if err == nil {
 		return f, nil
 	}
-	if errors.Is(err, ErrNotExist) {
-		return File{}, ErrNotExist
-	}
+	// Always try the backup: Save renames the primary to .bak before
+	// installing the new file, so a crash in that window leaves only .bak.
 	bak, bakErr := s.loadFile(s.path + ".bak")
+	if errors.Is(err, ErrNotExist) {
+		if bakErr == nil {
+			return bak, nil
+		}
+		if errors.Is(bakErr, ErrNotExist) {
+			return File{}, ErrNotExist
+		}
+		return File{}, fmt.Errorf("状态文件缺失且备份不可用: %v", bakErr)
+	}
 	if bakErr == nil {
 		return bak, nil
 	}

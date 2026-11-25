@@ -3,6 +3,7 @@ package hub
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/zoneBen/longuv/internal/climate"
 	"github.com/zoneBen/longuv/internal/config"
@@ -22,7 +23,7 @@ func SnapshotFromConfig(d config.Device) (model.Snapshot, error) {
 	}
 	custom := make(map[int][8]byte, len(d.Tags.Custom))
 	for key, raw := range d.Tags.Custom {
-		u, err := strconv.Atoi(key)
+		u, err := strconv.Atoi(strings.TrimSpace(key))
 		if err != nil {
 			return model.Snapshot{}, fmt.Errorf("设备 %s 的 tags.custom 键 %q 非法", d.ID, key)
 		}

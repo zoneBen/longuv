@@ -125,9 +125,13 @@ func (d *Device) WriteShadowHolding(addr, value uint16) uint8 {
 	case addr >= shadowInfo && addr < shadowInfo+6:
 		return ExcIllegalAddress // device identity is read-only
 	case addr >= shadowESN && addr < shadowESN+10:
+		hi, lo := byte(value>>8), byte(value)
+		if hi < 32 || hi > 126 || lo < 32 || lo > 126 {
+			return ExcIllegalValue
+		}
 		i := int(addr - shadowESN)
-		d.esn[2*i] = byte(value >> 8)
-		d.esn[2*i+1] = byte(value)
+		d.esn[2*i] = hi
+		d.esn[2*i+1] = lo
 		d.dirtyLocked()
 		return 0
 	case addr >= shadowTags && int(addr) < shadowTags+d.uCount*4:
@@ -221,6 +225,7 @@ func (d *Device) WriteShadowCoil(addr uint16, on bool) uint8 {
 		if on {
 			w := d.th[z]
 			d.engine.SetManual(z, byte(w>>8), byte(w), time.Time{})
+			d.dirtyLocked()
 		} else {
 			d.engine.ClearManual(z)
 			d.engine.Refresh(now)

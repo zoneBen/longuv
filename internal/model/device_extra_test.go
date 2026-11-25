@@ -471,3 +471,40 @@ func TestSnapshotHelpers(t *testing.T) {
 		t.Fatalf("clamped index bytes = % X", clamped[0])
 	}
 }
+
+func TestShadowESNValidation(t *testing.T) {
+	dev := newTestDevice(t, nil)
+	if code := dev.WriteShadowHolding(0x8006, 0x0000); code != ExcIllegalValue {
+		t.Fatalf("binary ESN write code = %d", code)
+	}
+	if code := dev.WriteShadowHolding(0x8006, 0x1F41); code != ExcIllegalValue {
+		t.Fatalf("control-character ESN write code = %d", code)
+	}
+	if code := dev.WriteShadowHolding(0x8006, 0x4142); code != 0 {
+		t.Fatalf("printable ESN write code = %d", code)
+	}
+	if got := dev.ESNString(); !strings.HasPrefix(got, "AB") {
+		t.Fatalf("ESN after write = %q", got)
+	}
+}
+
+func TestShadowManualCoilMarksDirty(t *testing.T) {
+	calls := 0
+	dev, err := New(Snapshot{
+		ID: "cb", UCount: 1, Tags: []string{""},
+		Climate: climate.Params{Timezone: "UTC", TimeScale: 1, UpdateMS: 5000},
+	}, time.Now(), func() { calls++ })
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls = 0
+	if code := dev.WriteShadowCoil(0x8060, true); code != 0 {
+		t.Fatalf("manual coil freeze code = %d", code)
+	}
+	if calls == 0 {
+		t.Fatal("manual freeze did not trigger the persistence callback")
+	}
+	if dev.ManualMask()&1 == 0 {
+		t.Fatal("manual freeze did not take effect")
+	}
+}
