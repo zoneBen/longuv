@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	_ "time/tzdata" // embed the timezone database for minimal CentOS 7 / Ubuntu images
 
 	"github.com/zoneBen/longuv/internal/app"
 	"github.com/zoneBen/longuv/internal/buildinfo"

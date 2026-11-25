@@ -1,0 +1,119 @@
+# iadu-sim 默认配置
+# 安装路径：/opt/apps/iadu-sim/config/config.yaml
+# 修改后重启服务：systemctl restart iadu-sim
+
+version: 1
+
+server:
+  web:
+    enabled: true
+    # 安全默认：仅本机可访问。局域网访问请改为 0.0.0.0:18090 并务必设置 token。
+    listen: "127.0.0.1:18090"
+    token: ""
+    sse_max_clients: 64
+    frame_buffer: 2048
+  modbus_tcp:
+    enabled: true
+    # 调整服务：标准 Modbus TCP。0.0.0.0:15020 不对应标准 502，避免与现场设备冲突。
+    listen: "0.0.0.0:15020"
+    default_unit: 1
+    max_conns: 64
+    idle_timeout_s: 120
+  log:
+    level: info
+    file: /opt/apps/iadu-sim/logs/iadu-sim.log
+    max_size_mb: 20
+    max_backups: 5
+    json: false
+  state_file: /opt/apps/iadu-sim/data/state.json
+  timezone: Asia/Shanghai
+
+ports:
+  - name: COM1
+    transport: pty
+    # 采集程序打开这个稳定路径；模拟器重启后 pts 编号会变化，采集程序需重新打开。
+    link: /opt/apps/iadu-sim/run/com1
+    baud: 9600
+    # 0666 便于任意同机采集用户打开；可收紧为 0660 并设置 group: dialout。
+    mode: "0666"
+    group: ""
+    # true 时允许把同名的普通文件先重命名为 .bak.<时间戳> 再建软链；默认拒绝覆盖。
+    replace_existing: false
+    response_delay_ms: 0
+    bcast_reply: own
+    tx_silence_ms: 0
+    broadcast_mode: all
+  - name: COM2
+    transport: pty
+    link: /opt/apps/iadu-sim/run/com2
+    baud: 9600
+    mode: "0666"
+    group: ""
+    # true 时允许把同名的普通文件先重命名为 .bak.<时间戳> 再建软链；默认拒绝覆盖。
+    replace_existing: false
+    response_delay_ms: 0
+    bcast_reply: own
+    tx_silence_ms: 0
+    broadcast_mode: all
+
+devices:
+  - id: iadu-1
+    name: "机柜A 42U"
+    u_count: 42
+    model: 0x8020
+    baud_code: 3
+    soft_version: 0x0100
+    hard_version: 0x0100
+    esn: "E2010000000000000000"
+    adopt_address: true
+    changed_hold_ms: 5000
+    tcp_unit_id: 1
+    strict: false
+    tags:
+      mode: auto
+      seed: "E200000000000000"
+      index_offset: 6
+      index_bytes: 2
+      custom: {}
+    occupancy: "1-10,20"
+    bus:
+      connected: true
+      comm_ok: true
+      overcurrent: false
+    climate:
+      enabled: true
+      timezone: Asia/Shanghai
+      time_scale: 1.0
+      update_ms: 5000
+      temperature:
+        mean: 24.5
+        amplitude: 1.6
+        peak_hour: 15.0
+        harmonic2_amplitude: 0.2
+        min: 18.0
+        max: 30.0
+      humidity:
+        mean: 50.0
+        temp_coupling: 1.2
+        amplitude: 1.5
+        min: 30.0
+        max: 70.0
+      zone_offsets:
+        top:    { temp: 0.8,  humi: -1.0, lag_h: 0.25 }
+        mid:    { temp: 0.0,  humi: 0.0,  lag_h: 0.0 }
+        bottom: { temp: -0.6, humi: 1.0,  lag_h: -0.25 }
+      noise:
+        temp_tau_ms: 180000
+        temp_sigma: 0.15
+        humi_tau_ms: 180000
+        humi_sigma: 1.0
+    fixed:
+      temp: 25.0
+      humi: 50.0
+
+bindings:
+  - { device: iadu-1, port: COM1, unit_id: 1 }
+  - { device: iadu-1, port: COM2, unit_id: 1 }
+
+# state.json 一旦生成即成为设备/绑定的运行时权威；本文件中的 devices/bindings
+# 仅用于首次播种。要从本文件重新播种：iadu-sim --import-config

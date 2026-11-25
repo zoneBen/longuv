@@ -1,0 +1,89 @@
+name: ci
+
+on:
+  push:
+    branches:
+      - main
+      - 'feat/**'
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: vet
+        run: go vet ./...
+      - name: test
+        run: go test -race ./...
+      - name: selftest
+        run: go run ./cmd/iadu-sim --selftest
+
+  packages:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: build snapshot packages
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: '~> v2'
+          args: release --snapshot --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: inspect deb/rpm
+        run: |
+          set -euo pipefail
+          ls -lh dist
+          arches=""
+          for f in dist/*.deb; do
+            a=$(dpkg-deb -f "$f" Architecture)
+            echo "$f -> $a"
+            arches="$arches $a"
+            dpkg-deb -c "$f" | grep -q './usr/bin/iadu-sim'
+          done
+          echo "$arches" | grep -qw amd64
+          echo "$arches" | grep -qw arm64
+          echo "$arches" | grep -qw armhf
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq rpm >/dev/null
+          for f in dist/*.rpm; do
+            echo "== $f"
+            rpm -qpi "$f" | grep -E '^(Name|Version|Architecture)'
+            rpm -qp --scripts "$f" >/dev/null
+          done
+      - name: install deb on ubuntu 18 (smoke)
+        run: |
+          docker run --rm -v "$PWD/dist:/dist" ubuntu:18.04 sh -c '
+            set -e
+            dpkg -i /dist/*_amd64.deb
+            /usr/bin/iadu-sim --version
+            /usr/bin/iadu-sim --selftest
+          '
+      - name: install rpm on centos 7 (best effort)
+        continue-on-error: true
+        run: |
+          docker run --rm -v "$PWD/dist:/dist" centos:7 sh -c '
+            set -e
+            rpm -Uvh /dist/*x86_64.rpm
+            /usr/bin/iadu-sim --version
+            /usr/bin/iadu-sim --selftest
+          '
+      - uses: actions/upload-artifact@v4
+        with:
+          name: iadu-sim-packages
+          path: dist/*

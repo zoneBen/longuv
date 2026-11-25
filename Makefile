@@ -8,7 +8,7 @@ LDFLAGS := -s -w \
 	-X $(MODULE)/internal/buildinfo.Commit=$(COMMIT) \
 	-X $(MODULE)/internal/buildinfo.Date=$(DATE)
 
-.PHONY: build test vet race run linux clean fmt
+.PHONY: build test vet race run linux snapshot clean fmt
 
 build:
 	go build -trimpath -ldflags "$(LDFLAGS)" -o bin/$(BINARY) ./cmd/iadu-sim
@@ -27,6 +27,9 @@ run:
 
 linux:
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "$(LDFLAGS)" -o bin/$(BINARY)-linux-amd64 ./cmd/iadu-sim
+
+snapshot:
+	goreleaser release --snapshot --clean
 
 fmt:
 	gofmt -w cmd internal

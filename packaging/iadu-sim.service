@@ -1,0 +1,26 @@
+[Unit]
+Description=iadu-sim - iADU asset strip Modbus RTU/TCP simulator
+Documentation=file:/opt/apps/iadu-sim/README.md
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=iadu-sim
+Group=iadu-sim
+WorkingDirectory=/opt/apps/iadu-sim
+ExecStart=/usr/bin/iadu-sim --config /opt/apps/iadu-sim/config/config.yaml
+Restart=always
+RestartSec=2
+LimitNOFILE=4096
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+# 注意：不要使用 PrivateDevices=true，否则服务看不到 /dev/pts。
+# 监听 <1024 端口时才需要：
+# AmbientCapabilities=CAP_NET_BIND_SERVICE
+# CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+
+[Install]
+WantedBy=multi-user.target

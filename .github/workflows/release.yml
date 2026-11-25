@@ -1,0 +1,60 @@
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: go vet ./...
+      - run: go test -race ./...
+      - run: go run ./cmd/iadu-sim --selftest
+
+  release:
+    needs: test
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: goreleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: '~> v2'
+          args: ${{ startsWith(github.ref, 'refs/tags/v') && 'release --clean' || 'release --snapshot --clean' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: verify packages
+        run: |
+          set -euo pipefail
+          for f in dist/*.deb; do
+            echo "$f -> $(dpkg-deb -f "$f" Architecture)"
+            dpkg-deb -c "$f" | grep -q './usr/bin/iadu-sim'
+          done
+          for f in dist/*.rpm; do
+            echo "== $f"
+            if command -v rpm >/dev/null; then rpm -qpi "$f" | grep -E '^(Name|Version|Architecture)'; fi
+          done
+      - name: upload manual artifacts
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: iadu-sim-snapshot
+          path: dist/*

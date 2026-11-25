@@ -76,6 +76,16 @@ func TestPointLinkSafety(t *testing.T) {
 	if err := PointLink(regular, pair.SlavePath, false); err == nil {
 		t.Fatal("PointLink must refuse to overwrite a regular file")
 	}
+	if err := PointLink(regular, pair.SlavePath, true); err != nil {
+		t.Fatalf("PointLink with replaceNonSymlink: %v", err)
+	}
+	backups, _ := filepath.Glob(regular + ".bak.*")
+	if len(backups) != 1 {
+		t.Fatalf("expected one backup, got %v", backups)
+	}
+	if got, _ := os.Readlink(regular); got != pair.SlavePath {
+		t.Fatalf("replaced link = %q", got)
+	}
 	RemoveLinkIfTarget(link, pair.SlavePath)
 	if _, err := os.Lstat(link); !os.IsNotExist(err) {
 		t.Fatalf("link not removed: %v", err)

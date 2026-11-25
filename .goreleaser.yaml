@@ -1,0 +1,166 @@
+version: 2
+
+project_name: iadu-sim
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: linux-amd64
+    main: ./cmd/iadu-sim
+    binary: iadu-sim
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - amd64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X github.com/zoneBen/longuv/internal/buildinfo.Version={{ .Version }}
+      - -X github.com/zoneBen/longuv/internal/buildinfo.Commit={{ .Commit }}
+      - -X github.com/zoneBen/longuv/internal/buildinfo.Date={{ .Date }}
+
+  - id: linux-arm64
+    main: ./cmd/iadu-sim
+    binary: iadu-sim
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X github.com/zoneBen/longuv/internal/buildinfo.Version={{ .Version }}
+      - -X github.com/zoneBen/longuv/internal/buildinfo.Commit={{ .Commit }}
+      - -X github.com/zoneBen/longuv/internal/buildinfo.Date={{ .Date }}
+
+  - id: linux-armv7
+    main: ./cmd/iadu-sim
+    binary: iadu-sim
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - arm
+    goarm:
+      - "7"
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X github.com/zoneBen/longuv/internal/buildinfo.Version={{ .Version }}
+      - -X github.com/zoneBen/longuv/internal/buildinfo.Commit={{ .Commit }}
+      - -X github.com/zoneBen/longuv/internal/buildinfo.Date={{ .Date }}
+
+archives:
+  - id: tar
+    ids:
+      - linux-amd64
+      - linux-arm64
+    formats:
+      - tar.gz
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}
+    wrap_in_directory: true
+    files:
+      - src: packaging/config.example.yaml
+        dst: config.example.yaml
+      - src: packaging/iadu-sim.service
+        dst: iadu-sim.service
+      - src: packaging/install.sh
+        dst: install.sh
+        info:
+          mode: 0755
+      - src: packaging/uninstall.sh
+        dst: uninstall.sh
+        info:
+          mode: 0755
+      - src: README.md
+        dst: README.md
+
+nfpms:
+  - id: deb
+    package_name: iadu-sim
+    ids:
+      - linux-amd64
+      - linux-arm64
+      - linux-armv7
+    formats:
+      - deb
+    vendor: zoneBen
+    homepage: https://github.com/zoneBen/longuv
+    maintainer: mrcong <mrcong@users.noreply.github.com>
+    description: |-
+      iADU 42U asset strip Modbus RTU/TCP simulator with an embedded management console.
+    license: Proprietary
+    section: admin
+    priority: optional
+    contents:
+      - src: packaging/config.example.yaml
+        dst: /usr/share/iadu-sim/config.example.yaml
+      - src: README.md
+        dst: /usr/share/iadu-sim/README.md
+      - src: packaging/iadu-sim.service
+        dst: /lib/systemd/system/iadu-sim.service
+    scripts:
+      postinstall: packaging/nfpm/postinstall.sh
+      preremove: packaging/nfpm/preremove.sh
+      postremove: packaging/nfpm/postremove.sh
+
+  - id: rpm
+    package_name: iadu-sim
+    ids:
+      - linux-amd64
+      - linux-arm64
+    formats:
+      - rpm
+    vendor: zoneBen
+    homepage: https://github.com/zoneBen/longuv
+    maintainer: mrcong <mrcong@users.noreply.github.com>
+    description: |-
+      iADU 42U asset strip Modbus RTU/TCP simulator with an embedded management console.
+    license: Proprietary
+    contents:
+      - src: packaging/config.example.yaml
+        dst: /usr/share/iadu-sim/config.example.yaml
+      - src: README.md
+        dst: /usr/share/iadu-sim/README.md
+      - src: packaging/iadu-sim.service
+        dst: /usr/lib/systemd/system/iadu-sim.service
+    rpm:
+      summary: iADU asset strip Modbus simulator
+      group: Applications/System
+      compression: gzip
+    scripts:
+      postinstall: packaging/nfpm/postinstall.sh
+      preremove: packaging/nfpm/preremove.sh
+      postremove: packaging/nfpm/postremove.sh
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  use: github
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+
+release:
+  github:
+    owner: zoneBen
+    name: longuv
+  draft: false
+  prerelease: auto
+
+dist: dist

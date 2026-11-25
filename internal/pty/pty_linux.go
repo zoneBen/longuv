@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"time"
 
 	"golang.org/x/sys/unix"
 )
@@ -75,15 +76,22 @@ func ConfigureSlave(path string, mode os.FileMode, gid int) error {
 	return nil
 }
 
-// PointLink atomically points link at target. Existing symlinks are replaced;
-// a non-symlink is never overwritten (to protect real /dev/ttyXXX nodes).
-func PointLink(link, target string, _ bool) error {
+// PointLink atomically points link at target. Existing symlinks are replaced.
+// A non-symlink is only moved to .bak.<timestamp> when replaceNonSymlink is
+// true; the default protects real /dev/ttyXXX nodes from accidental clobbering.
+func PointLink(link, target string, replaceNonSymlink bool) error {
 	if err := os.MkdirAll(filepath.Dir(link), 0o755); err != nil {
 		return fmt.Errorf("创建软链目录: %w", err)
 	}
 	if fi, err := os.Lstat(link); err == nil {
 		if fi.Mode()&os.ModeSymlink == 0 {
-			return fmt.Errorf("%s 已存在且不是符号链接，拒绝覆盖", link)
+			if !replaceNonSymlink {
+				return fmt.Errorf("%s 已存在且不是符号链接，拒绝覆盖", link)
+			}
+			backup := link + ".bak." + time.Now().Format("20060102150405")
+			if err := os.Rename(link, backup); err != nil {
+				return fmt.Errorf("备份已存在的 %s: %w", link, err)
+			}
 		}
 	} else if !os.IsNotExist(err) {
 		return fmt.Errorf("检查软链 %s: %w", link, err)

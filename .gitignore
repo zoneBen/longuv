@@ -9,8 +9,13 @@ data/
 *.out
 
 # Local runtime for development
-/.iadu-sim/
+/.iadu-sim*/
 *.log
+
+# Local package artifacts
+/*.deb
+/*.rpm
+/*.tar.gz
 
 # Editors / OS
 .idea/

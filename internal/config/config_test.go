@@ -146,6 +146,24 @@ func TestDuplicateTCPUnitRejected(t *testing.T) {
 	}
 }
 
+func TestExampleConfigLoads(t *testing.T) {
+	path := filepath.Join("..", "..", "packaging", "config.example.yaml")
+	c, err := Load(path, "/opt/apps/iadu-sim")
+	if err != nil {
+		t.Fatalf("packaging/config.example.yaml: %v", err)
+	}
+	if len(c.Ports) != 2 || len(c.Devices) != 1 || len(c.Bindings) != 2 {
+		t.Fatalf("example config shape: ports=%d devices=%d bindings=%d",
+			len(c.Ports), len(c.Devices), len(c.Bindings))
+	}
+	if c.Devices[0].Climate.Timezone != "Asia/Shanghai" {
+		t.Fatalf("timezone = %q", c.Devices[0].Climate.Timezone)
+	}
+	if c.Ports[0].Link != "/opt/apps/iadu-sim/run/com1" {
+		t.Fatalf("link = %q", c.Ports[0].Link)
+	}
+}
+
 func TestInvalidConfigValues(t *testing.T) {
 	cases := []func(*Config){
 		func(c *Config) { c.Server.Web.Listen = "not-a-listen" },
