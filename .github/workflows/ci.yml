@@ -72,7 +72,14 @@ jobs:
             fi
             echo "$f -> $a"
             arches="$arches $a"
-            if ! dpkg-deb -c "$f" | grep -q './usr/bin/iadu-sim'; then
+            # Do not pipe dpkg-deb into `grep -q`: grep exits on the first
+            # match, dpkg-deb gets SIGPIPE, and pipefail reports a false
+            # "missing file" failure.
+            if ! listing=$(dpkg-deb -c "$f"); then
+              echo "::error file=$f::dpkg-deb -c failed"
+              exit 1
+            fi
+            if ! grep -q './usr/bin/iadu-sim' <<<"$listing"; then
               echo "::error file=$f::deb is missing /usr/bin/iadu-sim"
               exit 1
             fi

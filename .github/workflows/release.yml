@@ -52,7 +52,11 @@ jobs:
           set -euo pipefail
           for f in dist/*.deb; do
             echo "$f -> $(dpkg-deb -f "$f" Architecture)"
-            dpkg-deb -c "$f" | grep -q './usr/bin/iadu-sim'
+            listing=$(dpkg-deb -c "$f")
+            grep -q './usr/bin/iadu-sim' <<<"$listing" || {
+              echo "::error file=$f::deb is missing /usr/bin/iadu-sim"
+              exit 1
+            }
           done
           for f in dist/*.rpm; do
             echo "== $f"
