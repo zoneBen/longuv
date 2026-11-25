@@ -19,7 +19,13 @@ jobs:
           go-version-file: go.mod
           cache: true
       - run: go vet ./...
-      - run: go test -race ./...
+      - name: test
+        run: |
+          set -o pipefail
+          go test -race -json ./... 2>&1 | tee /tmp/go-test.json
+      - name: annotate test failures
+        if: failure()
+        run: python3 .github/scripts/annotate_tests.py /tmp/go-test.json
       - run: go run ./cmd/iadu-sim --selftest
 
   release:

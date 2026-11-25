@@ -23,7 +23,12 @@ jobs:
       - name: vet
         run: go vet ./...
       - name: test
-        run: go test -race ./...
+        run: |
+          set -o pipefail
+          go test -race -json ./... 2>&1 | tee /tmp/go-test.json
+      - name: annotate test failures
+        if: failure()
+        run: python3 .github/scripts/annotate_tests.py /tmp/go-test.json
       - name: selftest
         run: go run ./cmd/iadu-sim --selftest
 
@@ -45,7 +50,7 @@ jobs:
           args: release --snapshot --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: inspect deb/rpm
+      - name: check deb packages
         run: |
           set -euo pipefail
           ls -lh dist
@@ -54,17 +59,32 @@ jobs:
             a=$(dpkg-deb -f "$f" Architecture)
             echo "$f -> $a"
             arches="$arches $a"
-            dpkg-deb -c "$f" | grep -q './usr/bin/iadu-sim'
+            if ! dpkg-deb -c "$f" | grep -q './usr/bin/iadu-sim'; then
+              echo "::error file=$f::deb is missing /usr/bin/iadu-sim"
+              exit 1
+            fi
           done
-          echo "$arches" | grep -qw amd64
-          echo "$arches" | grep -qw arm64
-          echo "$arches" | grep -qw armhf
+          for want in amd64 arm64 armhf; do
+            if ! echo "$arches" | grep -qw "$want"; then
+              echo "::error::missing deb architecture $want (got:$arches)"
+              exit 1
+            fi
+          done
+      - name: check rpm packages
+        run: |
+          set -euo pipefail
           sudo apt-get update -qq
           sudo apt-get install -y -qq rpm >/dev/null
           for f in dist/*.rpm; do
             echo "== $f"
-            rpm -qpi "$f" | grep -E '^(Name|Version|Architecture)'
-            rpm -qp --scripts "$f" >/dev/null
+            if ! rpm -qpi "$f" | grep -E '^(Name|Version|Architecture)'; then
+              echo "::error file=$f::rpm metadata unreadable"
+              exit 1
+            fi
+            if ! rpm -qp --scripts "$f" >/dev/null; then
+              echo "::error file=$f::rpm scriptlets unreadable"
+              exit 1
+            fi
           done
       - name: install deb on ubuntu 18 (smoke)
         run: |
